@@ -76,13 +76,12 @@ static void remmina_plugin_spice_init(RemminaProtocolWidget *gp)
 {
 	TRACE_CALL(__func__);
 
-	gchar *host;
-	gint port;
 	RemminaPluginSpiceData *gpdata;
 	RemminaFile *remminafile;
 
 	gpdata = g_new0(RemminaPluginSpiceData, 1);
 	g_object_set_data_full(G_OBJECT(gp), "plugin-data", gpdata, g_free);
+	remminafile = remmina_plugin_service->protocol_plugin_get_file(gp);
 
 	gpdata->session = spice_session_new();
 	g_signal_connect(gpdata->session,
@@ -90,15 +89,7 @@ static void remmina_plugin_spice_init(RemminaProtocolWidget *gp)
 	                 G_CALLBACK(remmina_plugin_spice_channel_new_cb),
 	                 gp);
 
-	remminafile = remmina_plugin_service->protocol_plugin_get_file(gp);
-	remmina_plugin_service->get_server_port(remmina_plugin_service->file_get_string(remminafile, "server"),
-	                                        XSPICE_DEFAULT_PORT,
-	                                        &host,
-	                                        &port);
-
 	g_object_set(gpdata->session,
-	             "host", host,
-	             "port", g_strdup_printf("%i", port),
 	             "password", remmina_plugin_service->file_get_secret(remminafile, "password"),
 	             "read-only", remmina_plugin_service->file_get_int(remminafile, "viewonly", FALSE),
 	             "enable-audio", remmina_plugin_service->file_get_int(remminafile, "enableaudio", FALSE),
@@ -110,14 +101,33 @@ static void remmina_plugin_spice_init(RemminaProtocolWidget *gp)
 	             "auto-clipboard",
 	             !remmina_plugin_service->file_get_int(remminafile, "disableclipboard", FALSE),
 	             NULL);
-
-	g_free(host);
 }
 
 static gboolean remmina_plugin_spice_open_connection(RemminaProtocolWidget *gp)
 {
 	TRACE_CALL(__func__);
+
+	gint port;
+	gchar *host, *tunnel;
 	RemminaPluginSpiceData *gpdata = GET_PLUGIN_DATA(gp);
+	RemminaFile *remminafile = remmina_plugin_service->protocol_plugin_get_file(gp);
+
+	tunnel = remmina_plugin_service->protocol_plugin_start_direct_tunnel(gp, XSPICE_DEFAULT_PORT, FALSE);
+
+	if (!tunnel)
+	{
+		return FALSE;
+	}
+
+	remmina_plugin_service->get_server_port(tunnel,
+	                                        XSPICE_DEFAULT_PORT,
+	                                        &host,
+	                                        &port);
+
+	g_object_set(gpdata->session,
+	             "host", host,
+	             "port", g_strdup_printf("%i", port),
+	             NULL);
 
 	spice_session_connect(gpdata->session);
 
@@ -126,6 +136,8 @@ static gboolean remmina_plugin_spice_open_connection(RemminaProtocolWidget *gp)
 	 * If the event is SPICE_CHANNEL_OPENED, TRUE should be returned,
 	 * otherwise FALSE should be returned.
 	 */
+	g_free(host);
+	g_free(tunnel);
 	return TRUE;
 }
 
@@ -511,7 +523,7 @@ static RemminaProtocolPlugin remmina_plugin_spice =
 	"remmina-spice",                                                      // Icon for SSH connection
 	remmina_plugin_spice_basic_settings,                                  // Array for basic settings
 	remmina_plugin_spice_advanced_settings,                               // Array for advanced settings
-	REMMINA_PROTOCOL_SSH_SETTING_NONE,                                    // SSH settings type
+	REMMINA_PROTOCOL_SSH_SETTING_TUNNEL,                                  // SSH settings type
 	remmina_plugin_spice_features,                                        // Array for available features
 	remmina_plugin_spice_init,                                            // Plugin initialization
 	remmina_plugin_spice_open_connection,                                 // Plugin open connection
